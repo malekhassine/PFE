@@ -1,0 +1,147 @@
+version: "3.8"
+
+services:
+  db:
+    build:
+      context: ./infrastructure/ecomm-db
+      dockerfile: Dockerfile
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-ecomm-data:/var/lib/postgresql/data
+      - ./infrastructure/ecomm-db/ecomm.sql:/docker-entrypoint-initdb.d/ecomm.sql
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  gateway:
+    depends_on:
+      - db
+    build:
+      context: ./edge-services/ecomm-gateway
+      dockerfile: Dockerfile.local
+    ports:
+      - "8091:8091"
+    env_file:
+      - .env
+
+  user:
+    build:
+      context: ./micro-services/ecomm-web
+      dockerfile: Dockerfile.local
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  cart:
+    build:
+      context: ./micro-services/ecomm-cart
+      dockerfile: Dockerfile.local
+    ports:
+      - "8082:8082"
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  product:
+    build:
+      context: ./micro-services/ecomm-product
+      dockerfile: Dockerfile.local
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    links:
+      - redis
+    depends_on:
+      - db
+      - redis
+
+  order:
+    build:
+      context: ./micro-services/ecomm-order
+      dockerfile: Dockerfile.local
+    ports:
+      - "8083:8083"
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  elasticsearch:
+    image: elasticsearch:8.11.1
+    container_name: es-container
+    depends_on:
+      - product
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      [
+        "ELASTIC_USERNAME=elastic",
+        "ELASTIC_PASSWORD=DkIedPPSCb",
+        "ES_JAVA_OPTS=-Xms512m -Xmx512m",
+        "CLI_JAVA_OPTS=-Xms2g -Xmx2g",
+        "bootstrap.memory_lock=true",
+        "discovery.type=single-node",
+        "xpack.security.enabled=true",
+        "xpack.security.enrollment.enabled=false",
+      ]
+
+  redis:
+    image: redis:6.2-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --save 20 1 --loglevel verbose --protected-mode no #--requirepass eYVX7EwVmmxKPCDmwMtyKVge8oLd2t81
+    volumes:
+      - redis-cache:/data
+
+  # logstash:
+  #    image: logstash:8.11.1
+  #    volumes:
+  #      # - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+  #      #- ./logstash/conf:/usr/share/logstash/pipeline:ro
+  #      - logstash-conf:/usr/share/logstash/pipeline
+  #    #      - /var/log/GDPR/myapplication:/var/log/GDPR/myapplication:ro
+  #    ports:
+  #      - "5001:5001"
+  #    environment:
+  #      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+  #      ELASTICSEARCH_HOSTS: http://es-container:9200
+  #    networks:
+  #      - elk
+  #    depends_on:
+  #      - elasticsearch
+  #    links:
+  #      - elasticsearch
+
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.local
+    ports:
+      - "8888:80"
+    depends_on:
+      - gateway
+      - product
+
+networks:
+  elk:
+    driver: bridge
+  cache-net:
+    driver: bridge
+
+volumes:
+  esdata:
+    driver: local
+  postgres-ecomm-data:
+  logstash-conf:
+  redis-cache:
