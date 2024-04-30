@@ -37,6 +37,8 @@ pipeline {
                 stage('Build Stage') {
                     steps {
                         echo "Building"
+                        sh 'mvn clean install -DskipTests'
+
                     }
                 }
                // stage('SonarQube SAST') {
